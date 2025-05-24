@@ -16,8 +16,7 @@ contextBridge.exposeInMainWorld('electron', {
       'save-timer-settings',
       'get-active-window',
       'notification-dismissed', // Added channel to track dismissed notifications
-      'show-focus-popup', // Added for rich media focus popups
-      'stabilize-window' // New channel for window stability
+      'show-focus-popup' // Added for rich media focus popups
     ];
     
     if (validSendChannels.includes(channel)) {
@@ -37,8 +36,7 @@ contextBridge.exposeInMainWorld('electron', {
       'timer-settings-saved',
       'notification-dismissed',
       'show-focus-popup', // Add this to allowed channels
-      'focus-popup-displayed', // New event to confirm popup was displayed
-      'window-stabilized' // New event to confirm window stabilization
+      'focus-popup-displayed' // New event to confirm popup was displayed
     ];
     
     if (validReceiveChannels.includes(channel)) {
@@ -108,19 +106,6 @@ ipcRenderer.on('focus-popup-displayed', (event, data) => {
     console.log('Focus popup display confirmed:', data);
   } catch (error) {
     console.error('Error dispatching focus-popup-displayed event:', error);
-  }
-});
-
-// Add event listener for window stabilization confirmation
-ipcRenderer.on('window-stabilized', (event, data) => {
-  try {
-    window.dispatchEvent(new CustomEvent('window-stabilized', { 
-      detail: data 
-    }));
-    
-    console.log('Window stabilization confirmed:', data);
-  } catch (error) {
-    console.error('Error dispatching window-stabilized event:', error);
   }
 });
 

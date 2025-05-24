@@ -4,7 +4,6 @@ import SystemTrayService from '@/services/SystemTrayService';
 import { toast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { FocusModeAlert } from '@/components/focus/FocusModeAlert';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface FocusModeContextType {
   isFocusMode: boolean;
@@ -29,10 +28,6 @@ export const useFocusMode = () => {
 };
 
 export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
-  // Use user?.id as userId, defaulting to 'guest' if not available
-  const userId = user?.id || 'guest';
-  
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [whitelist, setWhitelist] = useState<string[]>([]);
   const [dimInsteadOfBlock, setDimInsteadOfBlock] = useState(true);
@@ -59,27 +54,25 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Enhanced window info from active-win
   const [activeWindowInfo, setActiveWindowInfo] = useState<any>(null);
   
-  // Track the last time a notification was shown for each app
-  const [appNotificationTimestamps, setAppNotificationTimestamps] = useState<Record<string, number>>({});
+  // User identifier for data separation
+  const [userId, setUserId] = useState<string>(() => {
+    const storedId = localStorage.getItem('focusModeUserId');
+    if (storedId) return storedId;
+    
+    // Create new unique ID if none exists
+    const newId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    localStorage.setItem('focusModeUserId', newId);
+    return newId;
+  });
   
-  // Track if we already processed a switch to avoid duplicate popups
-  const [processedSwitches, setProcessedSwitches] = useState<Set<string>>(new Set());
-
-  // Add this new effect to prevent window glitching when focus mode is toggled
+  // Load custom image from localStorage on initial mount
   useEffect(() => {
-    // Send stabilize message to main process when focus mode changes
-    if (window.electron) {
-      // Small delay to avoid race conditions
-      const stabilizeTimer = setTimeout(() => {
-        window.electron.send('stabilize-window', { 
-          isFocusMode,
-          timestamp: Date.now()
-        });
-      }, 100);
-      
-      return () => clearTimeout(stabilizeTimer);
+    // Load image based on user ID
+    const savedImage = localStorage.getItem(`focusModeCustomImage-${userId}`);
+    if (savedImage) {
+      setCustomImage(savedImage);
     }
-  }, [isFocusMode]);
+  }, [userId]);
   
   // Load saved whitelist from localStorage on initial mount
   useEffect(() => {
@@ -107,12 +100,6 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsFocusMode(true);
     }
     
-    // Get custom image if available
-    const savedCustomImage = localStorage.getItem(`focusModeCustomImage-${userId}`);
-    if (savedCustomImage) {
-      setCustomImage(savedCustomImage);
-    }
-    
     // Register for active window change events using custom event listener
     const handleActiveWindowChanged = (event: CustomEvent<any>) => {
       const windowInfo = event.detail;
@@ -127,7 +114,7 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       let appName;
       if (typeof windowInfo === 'object') {
         // Get the most reliable identifier for the app
-        appName = windowInfo.owner?.name || windowInfo.appName || extractAppName(windowInfo.title);
+        appName = windowInfo.owner || windowInfo.appName || extractAppName(windowInfo.title);
         setCurrentActiveApp(appName);
       } else {
         appName = extractAppName(windowInfo);
@@ -218,7 +205,6 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setNotificationShown({});
     setWasInWhitelistedApp(false);
     setLastNotifiedApp(null);
-    setProcessedSwitches(new Set());
     
     // Only start real-time monitoring if focus mode is active
     if (isFocusMode) {
@@ -273,34 +259,17 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     
     console.log(`App switched to: ${currentAppName}, Whitelisted: ${isCurrentAppWhitelisted}, Was in whitelisted: ${wasInWhitelistedApp}`);
     
-    // Create a unique ID for this switch to prevent duplicates
-    const switchId = `${previousActiveWindow}-to-${currentAppName}-${Date.now()}`;
-    
-    // If switching from whitelisted to non-whitelisted or between non-whitelisted apps
-    if (!isCurrentAppWhitelisted && currentAppName) {
-      // Show notification if:
-      // 1. We're coming from a whitelisted app, OR
-      // 2. We're coming from a different non-whitelisted app
-      if ((wasInWhitelistedApp || 
-          (lastNotifiedApp && lastNotifiedApp !== currentAppName)) && 
-          !processedSwitches.has(switchId)) {
-        
-        console.log(`Showing notification for app switch: ${switchId}`);
-        handleNonWhitelistedApp(currentAppName);
-        
-        // Mark this switch as processed
-        setProcessedSwitches(prev => {
-          const updated = new Set(prev);
-          updated.add(switchId);
-          return updated;
-        });
-      }
+    // If switching from whitelisted to non-whitelisted
+    if (wasInWhitelistedApp && !isCurrentAppWhitelisted && currentAppName) {
+      console.log(`Switching FROM whitelisted TO non-whitelisted app: ${currentAppName}`);
+      // Always show notification when switching from whitelisted to non-whitelisted
+      handleNonWhitelistedApp(currentAppName);
     }
     
     // Update tracking state for next comparison
     setWasInWhitelistedApp(isCurrentAppWhitelisted);
     
-  }, [lastActiveWindow, isFocusMode, whitelist, activeWindowInfo, previousActiveWindow, wasInWhitelistedApp, lastNotifiedApp]);
+  }, [lastActiveWindow, isFocusMode, whitelist, activeWindowInfo]);
   
   // Function to check if active window is whitelisted and handle notifications
   const checkActiveWindowAgainstWhitelist = useCallback((windowTitle: string) => {
@@ -316,62 +285,25 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       currentAppName = extractAppName(windowTitle);
     }
     
-    // Also grab executable/process name if available
-    let executableName = '';
-    if (activeWindowInfo && typeof activeWindowInfo === 'object') {
-      if (activeWindowInfo.owner?.path) {
-        const pathParts = activeWindowInfo.owner.path.split(/[/\\]/);
-        executableName = pathParts[pathParts.length - 1]; // Get the last part of the path
-      }
-    }
-    
     // Check if the current app is in the whitelist using improved matching
-    const isCurrentAppWhitelisted = isAppInWhitelist(currentAppName, whitelist) || 
-                                   (executableName && isAppInWhitelist(executableName, whitelist));
+    const isCurrentAppWhitelisted = isAppInWhitelist(currentAppName, whitelist);
     
-    console.log("Focus check:", currentAppName, "Executable:", executableName, "Whitelisted:", isCurrentAppWhitelisted);
+    console.log("Focus check:", currentAppName, "Whitelisted:", isCurrentAppWhitelisted);
     
     // Update the state for the Live Whitelist Match Preview feature
     setCurrentActiveApp(currentAppName);
     setIsCurrentAppWhitelisted(isCurrentAppWhitelisted);
     
-    // If not whitelisted, check if we need to show a notification
+    // If not whitelisted, show notification (with additional conditions)
     if (!isCurrentAppWhitelisted && currentAppName) {
-      // Create a unique switch ID
-      const switchId = `${previousActiveWindow}-to-${currentAppName}`;
+      // Check if we need to show a notification (based on app switching pattern)
+      const needToShowNotification = wasInWhitelistedApp || 
+                                    (previousActiveWindow && 
+                                     isAppInWhitelist(extractAppName(previousActiveWindow), whitelist));
       
-      // Check for app switch events that would trigger notification
-      const isNewSwitch = previousActiveWindow !== lastActiveWindow;
-      const isFromWhitelistedApp = wasInWhitelistedApp;
-      const isDifferentNonWhitelistedApp = lastNotifiedApp && lastNotifiedApp !== currentAppName;
-      
-      // Only show notification once per switch
-      const switchNotProcessed = !processedSwitches.has(switchId);
-      
-      // Check if enough time has passed since last notification for this app
-      const now = Date.now();
-      const lastNotificationTime = appNotificationTimestamps[currentAppName] || 0;
-      const notificationCooldown = 5000; // 5 seconds between notifications for the same app
-      const cooldownElapsed = now - lastNotificationTime > notificationCooldown;
-      
-      if ((isNewSwitch || isFromWhitelistedApp || isDifferentNonWhitelistedApp) && 
-          switchNotProcessed && cooldownElapsed) {
-        
-        console.log(`Showing notification for app: ${currentAppName}`);
+      if (needToShowNotification && lastNotifiedApp !== currentAppName) {
+        console.log("Showing notification for non-whitelisted app:", currentAppName);
         handleNonWhitelistedApp(currentAppName);
-        
-        // Mark this switch as processed
-        setProcessedSwitches(prev => {
-          const updated = new Set(prev);
-          updated.add(switchId);
-          return updated;
-        });
-        
-        // Record notification timestamp for this app
-        setAppNotificationTimestamps(prev => ({
-          ...prev,
-          [currentAppName]: now
-        }));
       }
     } 
     // If app is now whitelisted but we were showing an alert for it, clear the alert
@@ -393,7 +325,7 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     }
     
-  }, [isFocusMode, whitelist, previousActiveWindow, wasInWhitelistedApp, showingAlert, currentAlertApp, lastNotifiedApp, activeWindowInfo, processedSwitches, appNotificationTimestamps]);
+  }, [isFocusMode, whitelist, previousActiveWindow, wasInWhitelistedApp, showingAlert, currentAlertApp, lastNotifiedApp, activeWindowInfo]);
   
   // Extract the core app name from window title for more reliable matching
   const extractAppName = (windowTitle: string): string => {
@@ -404,77 +336,44 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return appNameMatches?.[1]?.trim() || windowTitle.trim();
   };
   
-  // Significantly improved app matching against whitelist with enhanced fuzzy matching
+  // Improved app matching against whitelist with better fuzzy matching
   const isAppInWhitelist = (appName: string, whitelist: string[]): boolean => {
     if (!appName) return false;
     
-    // Normalize the app name for better matching - lowercase and remove special characters
-    const normalizedAppName = appName.toLowerCase().replace(/[^\w\s.-]/g, '');
-    
-    // Try to extract filename or process name if it's an exe
-    const processMatch = normalizedAppName.match(/([^\\\/]+)(?:\.exe)?$/i);
-    const processName = processMatch ? processMatch[1].toLowerCase() : '';
+    const normalizedAppName = appName.toLowerCase();
     
     return whitelist.some(whitelistedApp => {
-      // Normalize whitelist entry
-      const normalizedWhitelistedApp = whitelistedApp.toLowerCase().replace(/[^\w\s.-]/g, '');
+      const normalizedWhitelistedApp = whitelistedApp.toLowerCase();
       
-      // Direct match
+      // Check exact matches
       if (normalizedAppName === normalizedWhitelistedApp) return true;
       
-      // Partial matches in either direction
-      if (normalizedAppName.includes(normalizedWhitelistedApp) || 
-          normalizedWhitelistedApp.includes(normalizedAppName)) {
+      // Check if app name contains the whitelist entry
+      if (normalizedAppName.includes(normalizedWhitelistedApp)) return true;
+      
+      // Check if whitelist entry contains app name
+      if (normalizedWhitelistedApp.includes(normalizedAppName)) return true;
+      
+      // Check for process names (chrome.exe, etc)
+      if (normalizedAppName.includes('.exe') && 
+          normalizedWhitelistedApp.includes(normalizedAppName.replace('.exe', ''))) {
         return true;
       }
       
-      // Process name matches (for .exe files)
-      if (processName && (
-          normalizedWhitelistedApp.includes(processName) || 
-          processName.includes(normalizedWhitelistedApp))) {
-        return true;
-      }
-      
-      // Match with bundle ID components (e.g., com.microsoft.vscode)
+      // Check for bundle IDs (com.google.Chrome, etc)
       if (activeWindowInfo && 
           activeWindowInfo.owner && 
           activeWindowInfo.owner.bundleId) {
         
         const bundleId = activeWindowInfo.owner.bundleId.toLowerCase();
-        const bundleParts = bundleId.split('.');
         
-        // Check all parts of the bundle ID (e.g., "microsoft", "vscode")
-        return bundleParts.some(part => 
-          part.includes(normalizedWhitelistedApp) || 
-          normalizedWhitelistedApp.includes(part));
-      }
-      
-      // Match executable name parts
-      if (activeWindowInfo && activeWindowInfo.owner && activeWindowInfo.owner.path) {
-        const pathParts = activeWindowInfo.owner.path.toLowerCase().split(/[/\\]/);
-        const exeName = pathParts[pathParts.length - 1]; // Last part is the exe name
-        
-        if (exeName && (
-            exeName.includes(normalizedWhitelistedApp) || 
-            normalizedWhitelistedApp.includes(exeName))) {
-          return true;
-        }
-        
-        // Also match against executable name without extension
-        const exeNameNoExt = exeName.replace(/\.exe$/i, '');
-        if (exeNameNoExt && (
-            exeNameNoExt.includes(normalizedWhitelistedApp) || 
-            normalizedWhitelistedApp.includes(exeNameNoExt))) {
+        if (bundleId.includes(normalizedWhitelistedApp) || 
+            normalizedWhitelistedApp.includes(bundleId.split('.').pop() || '')) {
           return true;
         }
       }
       
-      // Match window title components (split by spaces, dashes, etc)
-      const titleParts = normalizedAppName.split(/[\s-_\.]+/);
-      return titleParts.some(part => 
-        part.includes(normalizedWhitelistedApp) || 
-        normalizedWhitelistedApp.includes(part)
-      );
+      return false;
     });
   };
   
@@ -486,19 +385,12 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setNotificationShown({});
     setWasInWhitelistedApp(false);
     setLastNotifiedApp(null);
-    setProcessedSwitches(new Set());
     
     // Notify user of mode change
     if (newState) {
       // Send to electron main process to update tray icon
       if (window.electron) {
         window.electron.send('toggle-focus-mode', true);
-        
-        // Add a stabilization message to prevent UI glitches
-        window.electron.send('stabilize-window', { 
-          isFocusMode: true,
-          timestamp: Date.now()
-        });
       }
       
       toast.success("Focus Mode activated", {
@@ -524,12 +416,6 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Send to electron main process to update tray icon
       if (window.electron) {
         window.electron.send('toggle-focus-mode', false);
-        
-        // Add a stabilization message to prevent UI glitches
-        window.electron.send('stabilize-window', { 
-          isFocusMode: false,
-          timestamp: Date.now()
-        });
       }
       
       // Clear any alert when disabling focus mode
@@ -542,89 +428,49 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   
   const addToWhitelist = useCallback((app: string) => {
     if (!whitelist.includes(app) && app.trim() !== '') {
-      // Send stabilize message before making the change
-      if (window.electron) {
-        window.electron.send('stabilize-window', { 
-          operation: 'pre-whitelist-change',
-          timestamp: Date.now()
-        });
+      setWhitelist(prev => [...prev, app]);
+      toast.success(`Added ${app} to whitelist`);
+      
+      // If we're adding the current app to whitelist, clear any alert
+      if (currentAlertApp === app) {
+        setShowingAlert(false);
+        setCurrentAlertApp(null);
+        setLastNotifiedApp(null); // Reset notification tracking
       }
       
-      // Schedule the actual state update with a tiny delay
-      setTimeout(() => {
-        setWhitelist(prev => [...prev, app]);
-        
-        toast.success(`Added ${app} to whitelist`);
-        
-        // If we're adding the current app to whitelist, clear any alert
-        if (currentAlertApp === app) {
-          setShowingAlert(false);
-          setCurrentAlertApp(null);
-          setLastNotifiedApp(null); // Reset notification tracking
-        }
-        
-        // If the current active window matches this app, update wasInWhitelistedApp
-        if (lastActiveWindow && extractAppName(lastActiveWindow) === app) {
-          setWasInWhitelistedApp(true);
-        }
-        
-        // Update the current app whitelist status for live preview
-        if (currentActiveApp === app) {
-          setIsCurrentAppWhitelisted(true);
-        }
-        
-        // Send stabilize message after making the change
-        if (window.electron) {
-          window.electron.send('stabilize-window', { 
-            operation: 'post-whitelist-change',
-            timestamp: Date.now()
-          });
-        }
-      }, 10);
+      // If the current active window matches this app, update wasInWhitelistedApp
+      if (lastActiveWindow && extractAppName(lastActiveWindow) === app) {
+        setWasInWhitelistedApp(true);
+      }
+      
+      // Update the current app whitelist status for live preview
+      if (currentActiveApp === app) {
+        setIsCurrentAppWhitelisted(true);
+      }
     }
   }, [whitelist, currentAlertApp, lastActiveWindow, currentActiveApp]);
   
   const removeFromWhitelist = useCallback((app: string) => {
-    // Send stabilize message before making the change
-    if (window.electron) {
-      window.electron.send('stabilize-window', { 
-        operation: 'pre-whitelist-change',
-        timestamp: Date.now()
-      });
-    }
+    setWhitelist(prev => prev.filter(item => item !== app));
+    toast.info(`Removed ${app} from whitelist`);
     
-    // Schedule the actual state update with a tiny delay
-    setTimeout(() => {
-      setWhitelist(prev => prev.filter(item => item !== app));
-      
-      toast.info(`Removed ${app} from whitelist`);
-      
-      // If we're removing the current app from whitelist and in focus mode,
-      // check if we need to show an alert
-      if (isFocusMode && lastActiveWindow) {
-        const currentAppName = extractAppName(lastActiveWindow);
-        if (currentAppName === app) {
-          // Update tracking state - we're now in a non-whitelisted app
-          setWasInWhitelistedApp(false);
-          
-          // Show notification for this newly non-whitelisted app
-          setTimeout(() => {
-            handleNonWhitelistedApp(currentAppName);
-          }, 100);
-          
-          // Update the current app whitelist status for live preview
-          setIsCurrentAppWhitelisted(false);
-        }
+    // If we're removing the current app from whitelist and in focus mode,
+    // check if we need to show an alert
+    if (isFocusMode && lastActiveWindow) {
+      const currentAppName = extractAppName(lastActiveWindow);
+      if (currentAppName === app) {
+        // Update tracking state - we're now in a non-whitelisted app
+        setWasInWhitelistedApp(false);
+        
+        // Show notification for this newly non-whitelisted app
+        setTimeout(() => {
+          handleNonWhitelistedApp(currentAppName);
+        }, 100);
+        
+        // Update the current app whitelist status for live preview
+        setIsCurrentAppWhitelisted(false);
       }
-      
-      // Send stabilize message after making the change
-      if (window.electron) {
-        window.electron.send('stabilize-window', { 
-          operation: 'post-whitelist-change',
-          timestamp: Date.now()
-        });
-      }
-    }, 10);
+    }
   }, [isFocusMode, lastActiveWindow]);
   
   const toggleDimOption = useCallback(() => {
@@ -638,9 +484,8 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setLastNotifiedApp(appName);
     
     // Get the custom image from localStorage based on user ID
-    const imageUrl = customImage || 
-                     localStorage.getItem(`focusModeCustomImage-${userId}`) || 
-                     'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
+    const imageUrl = localStorage.getItem(`focusModeCustomImage-${userId}`) || 
+                    'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
     
     // Set current alert app name and show the alert
     setCurrentAlertApp(appName);
@@ -657,7 +502,6 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     
     // Send to Electron main process for system-level popup
     if (window.electron) {
-      console.log("Sending focus popup request to Electron with image:", imageUrl);
       window.electron.send('show-focus-popup', {
         title: "Focus Mode Alert", 
         body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
@@ -665,10 +509,6 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         mediaType: 'image',
         mediaContent: imageUrl
       });
-      
-      // Pre-download and cache the image to prevent loading delays
-      const img = new Image();
-      img.src = imageUrl;
     }
     
     // Show notification using the centered toast
@@ -696,13 +536,7 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         description: "Focus Mode is blocking this application"
       });
     }
-    
-    // Update the timestamp for this app's notification
-    setAppNotificationTimestamps(prev => ({
-      ...prev,
-      [appName]: Date.now()
-    }));
-  }, [centerToast, dimInsteadOfBlock, userId, customImage]);
+  }, [centerToast, dimInsteadOfBlock, userId]);
   
   const applyDimEffect = useCallback(() => {
     // In a real implementation with Electron, we would create an overlay

@@ -20,8 +20,6 @@ export function FocusModeAlert({
   const [imageError, setImageError] = useState(false);
   const [popupShown, setPopupShown] = useState(false);
   const notificationIdRef = useRef<string>(`focus-alert-${appName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
-  // Reference to track if image is preloaded
-  const imagePreloadedRef = useRef<boolean>(false);
   
   // Auto-dismiss after 8 seconds
   useEffect(() => {
@@ -32,84 +30,62 @@ export function FocusModeAlert({
     return () => clearTimeout(timer);
   }, []);
   
-  // Preload image immediately on component mount to avoid flicker
+  // Tell the main process to show system overlay popup when this component mounts
   useEffect(() => {
-    if (imageUrl && !imagePreloadedRef.current) {
-      // Start preloading immediately
-      const img = new Image();
+    if (window.electron && !popupShown) {
+      console.log("FocusModeAlert: Dispatching focus popup event for:", appName);
+      console.log("Using image URL:", imageUrl);
       
+      // Use the pre-generated notification ID
+      const notificationId = notificationIdRef.current;
+      
+      // Preload the image to ensure it loads before displaying
+      const img = new Image();
       img.onload = () => {
-        // Image loaded successfully, mark as preloaded
-        imagePreloadedRef.current = true;
-        // Now show the popup with the pre-cached image
-        showFocusPopup();
+        // Once image is loaded, trigger the system-wide overlay popup
+        window.electron.send('show-focus-popup', {
+          title: "Focus Mode Alert", 
+          body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
+          notificationId: notificationId,
+          mediaType: 'image',
+          mediaContent: imageUrl
+        });
+        
+        setPopupShown(true);
       };
       
       img.onerror = () => {
-        // If image fails to load, use default
-        console.error("Failed to load focus mode image:", imageUrl);
+        // If image fails to load, still show popup but with default image
         setImageError(true);
-        showFocusPopup();
+        window.electron.send('show-focus-popup', {
+          title: "Focus Mode Alert", 
+          body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
+          notificationId: notificationId,
+          mediaType: 'image',
+          mediaContent: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6'
+        });
+        
+        setPopupShown(true);
       };
       
       // Start loading the image
       img.src = imageUrl;
       
-      // Fallback timer in case the image takes too long or silent failure
-      const fallbackTimer = setTimeout(() => {
-        if (!popupShown) {
-          console.log("Using fallback timer to show popup after image load delay");
-          showFocusPopup();
+      // Add listener for popup display confirmation
+      const handlePopupDisplayed = (event: Event) => {
+        const customEvent = event as CustomEvent;
+        if (customEvent.detail && customEvent.detail.notificationId === notificationId) {
+          console.log("Popup display confirmed:", customEvent.detail);
         }
-      }, 500); // Wait max 0.5 seconds for image to load
+      };
       
-      return () => clearTimeout(fallbackTimer);
-    } else if (!popupShown) {
-      // No image URL or already preloaded, just show popup with default
-      showFocusPopup();
+      window.addEventListener('focus-popup-displayed', handlePopupDisplayed);
+      
+      return () => {
+        window.removeEventListener('focus-popup-displayed', handlePopupDisplayed);
+      };
     }
-  }, [imageUrl, popupShown]);
-  
-  // Listen for popup displayed confirmations
-  useEffect(() => {
-    const handlePopupDisplayed = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      if (customEvent.detail && 
-          customEvent.detail.notificationId && 
-          customEvent.detail.notificationId.includes(notificationIdRef.current)) {
-        console.log("Popup display confirmed:", customEvent.detail);
-      }
-    };
-    
-    window.addEventListener('focus-popup-displayed', handlePopupDisplayed);
-    
-    return () => {
-      window.removeEventListener('focus-popup-displayed', handlePopupDisplayed);
-    };
-  }, []);
-  
-  // Function to show the focus popup
-  const showFocusPopup = () => {
-    if (window.electron && !popupShown) {
-      console.log("FocusModeAlert: Dispatching focus popup event for:", appName);
-      console.log("Using image URL:", !imageError ? imageUrl : 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6');
-      
-      // Use the pre-generated notification ID
-      const notificationId = notificationIdRef.current;
-      
-      // Send request to show system-wide overlay popup
-      window.electron.send('show-focus-popup', {
-        title: "Focus Mode Alert", 
-        body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
-        notificationId: notificationId,
-        mediaType: 'image',
-        mediaContent: !imageError ? imageUrl : 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6'
-      });
-      
-      // Mark popup as shown to prevent duplicate requests
-      setPopupShown(true);
-    }
-  };
+  }, [appName, imageUrl, popupShown]);
   
   const handleDismiss = () => {
     setIsVisible(false);

@@ -20,7 +20,6 @@ let isFocusMode = false;
 let notificationWindow = null;
 let focusPopupWindow = null;
 let lastProcessedNotificationId = null;
-let windowStabilizationInProgress = false;
 
 async function createWindow() {
   try {
@@ -161,7 +160,7 @@ function createFocusPopupWindow() {
     transparent: true,
     fullscreenable: false,
     skipTaskbar: true,
-    focusable: true, // Change to true to allow interaction
+    focusable: false,
     resizable: false,
     show: false,
     webPreferences: {
@@ -410,9 +409,8 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
       // Safe check for mediaContent
       const safeMediaContent = mediaContent || '';
       
-      // Pre-load image to ensure it's ready when popup shows
+      // Determine media HTML content - handle both file:// paths and URLs safely
       let mediaHtml = '';
-      
       if (mediaType === 'image' && safeMediaContent) {
         // Ensure the image source is properly formatted and escaped
         const imgSrc = safeMediaContent.replace(/"/g, '\\"');
@@ -463,8 +461,6 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
               height: 100%;
               object-fit: cover;
               animation: zoomIn 8s ease-in-out infinite alternate;
-              opacity: 0; /* Start invisible */
-              transition: opacity 0.3s ease-in;
             }
             .content {
               padding: 24px;
@@ -552,21 +548,11 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
               window.close();
             }
             
-            // Pre-fetch and cache image to ensure immediate display
+            // Preload image to ensure it's cached
             if ('${mediaType}' === 'image') {
-              // For images - preload with cache
-              function showImage() {
-                const imgElement = document.querySelector('.media-content');
-                if (imgElement) {
-                  imgElement.style.opacity = 1;
-                }
-              }
-              
-              // Immediately start loading the image
               const img = new Image();
               img.onload = function() {
-                // Image loaded successfully, show immediately
-                showImage();
+                document.querySelector('.media-content').style.opacity = 1;
                 
                 // Notify renderer the image has loaded successfully
                 if (window.opener) {
@@ -583,18 +569,11 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
               img.onerror = function() {
                 // Fall back to default image
                 document.querySelector('.media-content').src = 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
-                setTimeout(showImage, 100);
               };
               
-              // Start loading
-              img.src = '${safeMediaContent}';
-              
-              // If image was already cached, it might be loaded instantly
-              if (img.complete) {
-                showImage();
-              } else {
-                // Show the image after a short delay anyway, in case onload doesn't fire
-                setTimeout(showImage, 300);
+              // Start loading if not already loaded
+              if (!document.querySelector('.media-content').complete) {
+                img.src = '${safeMediaContent}';
               }
             }
             
@@ -626,10 +605,6 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
       // Show the popup window and force it to top
       focusPopupWindow.show();
       focusPopupWindow.moveTop();
-      
-      // Force activation to ensure it's visible
-      focusPopupWindow.setAlwaysOnTop(true);
-      focusPopupWindow.focus();
       
       // Notify the renderer that the popup has been displayed
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -937,85 +912,6 @@ ipcMain.on('show-focus-popup', (event, {title, body, notificationId, mediaType =
   console.log(`IPC focus popup received: ${title} - ${body}`);
   console.log(`Media details - Type: ${mediaType}, Content: ${mediaContent}`);
   showFocusPopup(title, body, notificationId, mediaType, mediaContent);
-});
-
-// Add a new handler for window stabilization to prevent flickering
-ipcMain.on('stabilize-window', (event, data) => {
-  // Avoid running multiple stabilizations at once
-  if (windowStabilizationInProgress) {
-    return;
-  }
-  
-  windowStabilizationInProgress = true;
-  console.log("Stabilizing window to prevent flickering:", data);
-  
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      // First ensure consistent dimensions and position
-      const bounds = mainWindow.getBounds();
-      
-      // Update bounds to prevent any size fluctuation
-      mainWindow.setBounds(bounds);
-      
-      // This is a key technique - briefly make the window always-on-top and then turn it off
-      // This ensures the window maintains its z-order and doesn't flicker
-      if (mainWindow.isVisible()) {
-        const wasAlwaysOnTop = mainWindow.isAlwaysOnTop();
-        
-        // Make sure we maintain the same visibility state
-        const isVisible = mainWindow.isVisible();
-        
-        // Brief always-on-top to stabilize
-        mainWindow.setAlwaysOnTop(true);
-        
-        // Small timeout to let the change take effect
-        setTimeout(() => {
-          // Reset to previous state
-          mainWindow.setAlwaysOnTop(wasAlwaysOnTop);
-          
-          // If it was visible, ensure it stays visible
-          if (isVisible && !mainWindow.isVisible()) {
-            mainWindow.show();
-          }
-          
-          windowStabilizationInProgress = false;
-        }, 100);
-      } else {
-        windowStabilizationInProgress = false;
-      }
-    } else {
-      windowStabilizationInProgress = false;
-    }
-  } catch (error) {
-    console.error("Error stabilizing window:", error);
-    windowStabilizationInProgress = false;
-  }
-});
-
-// Add a new handler to get active window details - enhanced version
-ipcMain.on('get-active-window', async (event) => {
-  try {
-    const windowInfo = await activeWin();
-    
-    if (windowInfo && mainWindow && !mainWindow.isDestroyed()) {
-      const enhancedInfo = {
-        title: windowInfo.title,
-        owner: windowInfo.owner ? {
-          name: windowInfo.owner.name,
-          path: windowInfo.owner.path,
-          processId: windowInfo.owner.processId,
-          bundleId: windowInfo.owner.bundleId
-        } : null,
-        // Extract executable name from path if available
-        executableName: windowInfo.owner && windowInfo.owner.path ? 
-          windowInfo.owner.path.split(/[/\\]/).pop() : null
-      };
-      
-      mainWindow.webContents.send('active-window-changed', enhancedInfo);
-    }
-  } catch (error) {
-    console.error("Error getting active window:", error);
-  }
 });
 
 app.whenReady().then(createWindow);
