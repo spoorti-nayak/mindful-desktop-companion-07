@@ -1,12 +1,11 @@
 
 import { TopNav } from "@/components/layout/TopNav";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import { EyeCareReminder } from "@/components/eyecare/EyeCareReminder";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Focus, Timer, Eye } from "lucide-react";
+import { Settings, Focus, Timer } from "lucide-react";
 import { useState } from "react";
 import { useFocusMode } from "@/contexts/FocusModeContext";
 import { useSystemTray } from "@/hooks/use-system-tray";
@@ -96,11 +95,6 @@ export default function Index() {
               )}
             </CardContent>
           </Card>
-
-          {/* Eye Care Reminder - Added back */}
-          <div className="md:col-span-1">
-            <EyeCareReminder />
-          </div>
 
           {/* Quick Actions */}
           <Card>

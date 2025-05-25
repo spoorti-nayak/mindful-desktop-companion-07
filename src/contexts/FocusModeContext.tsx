@@ -356,7 +356,7 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         customText: customText
       };
       
-      // Only include image if one is actually set by user
+      // Only include image if one is set
       if (customImage) {
         popupData.mediaType = 'image';
         popupData.mediaContent = customImage;

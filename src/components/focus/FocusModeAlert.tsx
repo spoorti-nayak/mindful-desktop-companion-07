@@ -48,36 +48,40 @@ export function FocusModeAlert({
       console.log("FocusModeAlert: Dispatching focus popup event for:", appName);
       console.log("Using image URL:", imageUrl);
       
+      // Use the pre-generated notification ID
       const notificationId = notificationIdRef.current;
       
-      // Only show popup with image if imageUrl is provided and valid
+      // Only load image if imageUrl is provided, otherwise skip image loading
       if (imageUrl) {
         const img = new Image();
         img.onload = () => {
+          // Once image is loaded, trigger the system-wide overlay popup
           window.electron.send('show-focus-popup', {
             title: "Focus Mode Alert", 
             body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
             notificationId: notificationId,
             mediaType: 'image',
-            mediaContent: imageUrl,
-            customText: customText
+            mediaContent: imageUrl
           });
+          
           setPopupShown(true);
         };
         
         img.onerror = () => {
+          // If image fails to load, show popup without image
           setImageError(true);
           window.electron.send('show-focus-popup', {
             title: "Focus Mode Alert", 
             body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
             notificationId: notificationId,
             mediaType: 'text',
-            mediaContent: '',
-            customText: customText
+            mediaContent: ''
           });
+          
           setPopupShown(true);
         };
         
+        // Start loading the image
         img.src = imageUrl;
       } else {
         // No image provided, show text-only popup
@@ -86,12 +90,13 @@ export function FocusModeAlert({
           body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
           notificationId: notificationId,
           mediaType: 'text',
-          mediaContent: '',
-          customText: customText
+          mediaContent: ''
         });
+        
         setPopupShown(true);
       }
       
+      // Add listener for popup display confirmation
       const handlePopupDisplayed = (event: Event) => {
         const customEvent = event as CustomEvent;
         if (customEvent.detail && customEvent.detail.notificationId === notificationId) {
@@ -105,10 +110,11 @@ export function FocusModeAlert({
         window.removeEventListener('focus-popup-displayed', handlePopupDisplayed);
       };
     }
-  }, [appName, imageUrl, popupShown, customText]);
+  }, [appName, imageUrl, popupShown]);
   
   const handleDismiss = () => {
     setIsVisible(false);
+    // Delay actual dismissal to allow animation to complete
     setTimeout(() => {
       onDismiss();
     }, 300);
@@ -129,7 +135,7 @@ export function FocusModeAlert({
           className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50"
         >
           <div className="bg-black/85 text-white rounded-lg shadow-lg border border-white/10 overflow-hidden max-w-md">
-            {/* Display custom image only if available and not errored */}
+            {/* Display custom image with proper styling if available */}
             {imageUrl && !imageError && (
               <div className="w-full h-40 bg-black/50 overflow-hidden">
                 <img 
