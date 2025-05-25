@@ -3,7 +3,7 @@ import SystemTrayService from '@/services/SystemTrayService';
 import { toast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { FocusModeAlert } from '@/components/focus/FocusModeAlert';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface FocusModeContextType {
   isFocusMode: boolean;
