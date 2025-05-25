@@ -1,156 +1,142 @@
 
-import { useState, useEffect } from "react";
 import { TopNav } from "@/components/layout/TopNav";
-import { StatCard } from "@/components/dashboard/StatCard";
-import { ActivityChart } from "@/components/dashboard/ActivityChart";
-import { PomodoroTimer } from "@/components/timers/PomodoroTimer";
-import { EyeCareReminder } from "@/components/eyecare/EyeCareReminder";
-import { AppUsageList } from "@/components/dashboard/AppUsageList";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import { Clock, Eye, Activity, Zap, Settings, BarChart3 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/contexts/AuthContext";
-import SystemTrayService from "@/services/SystemTrayService";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Settings, Focus, Timer } from "lucide-react";
+import { useState } from "react";
+import { useFocusMode } from "@/contexts/FocusModeContext";
+import { useSystemTray } from "@/hooks/use-system-tray";
+import { cn } from "@/lib/utils";
 
-const Index = () => {
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const { user } = useAuth();
+export default function Index() {
+  const [showSettings, setShowSettings] = useState(false);
+  const { 
+    isFocusMode, 
+    toggleFocusMode,
+    currentActiveApp,
+    isCurrentAppWhitelisted
+  } = useFocusMode();
   
-  // Real-time tracked data
-  const [screenTime, setScreenTime] = useState<string | null>(null);
-  const [focusScore, setFocusScore] = useState<number | null>(null);
-  const [distractionCount, setDistractionCount] = useState<number>(0);
-  const [eyeBreaks, setEyeBreaks] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  
-  // Subscribe to real-time data updates
-  useEffect(() => {
-    const systemTray = SystemTrayService.getInstance();
-    
-    // Get initial screen time
-    const initialScreenTime = systemTray.getFormattedScreenTime();
-    if (initialScreenTime !== "0h 0m") {
-      setScreenTime(initialScreenTime);
-    }
-    
-    // Listen for screen time updates
-    const handleScreenTimeUpdate = (screenTimeMs: number) => {
-      if (screenTimeMs > 0) {
-        setScreenTime(systemTray.formatScreenTime(screenTimeMs));
-      } else {
-        setScreenTime(null);
-      }
-      setIsLoading(false);
-    };
-    
-    // Listen for focus score updates
-    const handleFocusScoreUpdate = (score: number, distractions: number) => {
-      setFocusScore(score);
-      setDistractionCount(distractions);
-      setIsLoading(false);
-    };
-    
-    // Add listeners
-    systemTray.addScreenTimeListener(handleScreenTimeUpdate);
-    systemTray.addFocusScoreListener(handleFocusScoreUpdate);
-    
-    // Set loading state false after a delay even if no data
-    const loadingTimeout = setTimeout(() => {
-      setIsLoading(false);
-    }, 1500);
-    
-    // Clean up listeners
-    return () => {
-      systemTray.removeScreenTimeListener(handleScreenTimeUpdate);
-      systemTray.removeFocusScoreListener(handleFocusScoreUpdate);
-      clearTimeout(loadingTimeout);
-    };
-  }, []);
-  
-  // Format focus score for display
-  const formatFocusScore = (score: number | null): string | null => {
-    if (score === null) return null;
-    return `${score}%`;
-  };
+  useSystemTray();
+
+  if (showSettings) {
+    return (
+      <div className="min-h-screen bg-background">
+        <TopNav />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-bold">Settings</h1>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowSettings(false)}
+            >
+              Back to Dashboard
+            </Button>
+          </div>
+          <SettingsPanel />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <div className="container mx-auto py-6">
-        <Tabs
-          defaultValue="dashboard"
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="w-full"
-        >
-          <TabsList className="mb-6 grid w-full grid-cols-3">
-            <TabsTrigger value="dashboard" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              <span>Dashboard</span>
-            </TabsTrigger>
-            <TabsTrigger value="focus" className="flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              <span>Focus & Eye Care</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              <span>Settings</span>
-            </TabsTrigger>
-          </TabsList>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">
+              Monitor your productivity and manage focus settings
+            </p>
+          </div>
+          <Button onClick={() => setShowSettings(true)}>
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </Button>
+        </div>
 
-          <TabsContent value="dashboard" className="animate-fade-in">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              <StatCard
-                title="Focus Score"
-                value={formatFocusScore(focusScore)}
-                icon={<Activity />}
-                description="How focused you've been today"
-                loading={isLoading}
-                trend={focusScore !== null && focusScore < 70 ? "down" : undefined}
-                trendValue={focusScore !== null && focusScore < 70 ? `${distractionCount} distractions detected` : undefined}
-              />
-              <StatCard
-                title="Screen Time"
-                value={screenTime}
-                icon={<Clock />}
-                description="Total screen time today"
-                loading={isLoading}
-              />
-              <StatCard
-                title="Eye Breaks"
-                value={eyeBreaks}
-                icon={<Eye />}
-                description="Eye care breaks taken today"
-              />
-              <StatCard
-                title="Distractions"
-                value={distractionCount}
-                icon={<Zap />}
-                description="Times you got distracted"
-                loading={isLoading}
-              />
-            </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {/* Focus Mode Status */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Focus Mode</CardTitle>
+              <Focus className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  checked={isFocusMode} 
+                  onCheckedChange={toggleFocusMode}
+                />
+                <span className="text-sm">
+                  {isFocusMode ? "Active" : "Inactive"}
+                </span>
+              </div>
+              {isFocusMode && (
+                <div className="mt-3 space-y-2">
+                  <div className="text-xs text-muted-foreground">Current App:</div>
+                  <div className={cn(
+                    "flex items-center justify-between text-xs",
+                    isCurrentAppWhitelisted ? "text-green-600" : "text-red-600"
+                  )}>
+                    <span>{currentActiveApp || "No app detected"}</span>
+                    <Badge 
+                      variant={isCurrentAppWhitelisted ? "default" : "destructive"}
+                      className="text-xs"
+                    >
+                      {isCurrentAppWhitelisted ? "Allowed" : "Blocked"}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              <ActivityChart emptyState={true} />
-              <AppUsageList />
-            </div>
-          </TabsContent>
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+              <Timer className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full"
+                  onClick={() => setShowSettings(true)}
+                >
+                  Configure Focus Mode
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full"
+                  onClick={() => setShowSettings(true)}
+                >
+                  Timer Settings
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="focus" className="animate-fade-in">
-            <div className="grid gap-6 md:grid-cols-2">
-              <PomodoroTimer />
-              <EyeCareReminder />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="settings" className="animate-fade-in">
-            <SettingsPanel />
-          </TabsContent>
-        </Tabs>
+          {/* App Usage Tracker */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">App Usage</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Tracking your application usage patterns to help improve focus.
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
-};
-
-export default Index;
+}

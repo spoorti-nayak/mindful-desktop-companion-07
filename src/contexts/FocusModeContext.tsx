@@ -1,9 +1,9 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import SystemTrayService from '@/services/SystemTrayService';
 import { toast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { FocusModeAlert } from '@/components/focus/FocusModeAlert';
+import { useAuth } from '@/hooks/use-auth';
 
 interface FocusModeContextType {
   isFocusMode: boolean;
@@ -38,31 +38,25 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   
   // Enhanced tracking for better popup control
   const [lastNotifiedApp, setLastNotifiedApp] = useState<string | null>(null);
-  const [customImage, setCustomImage] = useState<string | null>(null);
   const [currentActiveApp, setCurrentActiveApp] = useState<string | null>(null);
   const [isCurrentAppWhitelisted, setIsCurrentAppWhitelisted] = useState(false);
   const [activeWindowInfo, setActiveWindowInfo] = useState<any>(null);
   
-  // User identifier for data separation
-  const [userId, setUserId] = useState<string>(() => {
+  // Get user from auth context with fallback
+  const auth = useAuth();
+  const userId = auth?.user?.id || (() => {
     const storedId = localStorage.getItem('focusModeUserId');
     if (storedId) return storedId;
     
     const newId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     localStorage.setItem('focusModeUserId', newId);
     return newId;
-  });
-  
-  // Load custom image from localStorage on initial mount
-  useEffect(() => {
-    const savedImage = localStorage.getItem(`focusModeCustomImage-${userId}`);
-    if (savedImage) {
-      setCustomImage(savedImage);
-    }
-  }, [userId]);
+  })();
   
   // Load saved settings from localStorage on initial mount
   useEffect(() => {
+    if (!userId) return;
+    
     const savedWhitelist = localStorage.getItem(`focusModeWhitelist-${userId}`);
     if (savedWhitelist) {
       try {
@@ -235,6 +229,14 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     if (!isFocusMode || !currentActiveApp) return;
     
+    // Never show popup for our own app
+    const normalizedCurrentApp = normalizeAppName(currentActiveApp);
+    if (normalizedCurrentApp.includes('mindful') || 
+        normalizedCurrentApp.includes('electron') ||
+        normalizedCurrentApp.includes('desktop-companion')) {
+      return;
+    }
+    
     const isWhitelisted = isAppInWhitelist(currentActiveApp, whitelist);
     
     // Show popup only when switching to a different non-whitelisted app
@@ -336,8 +338,9 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const handleNonWhitelistedApp = useCallback((appName: string) => {
     console.log("Handling non-whitelisted app:", appName);
     
-    const imageUrl = localStorage.getItem(`focusModeCustomImage-${userId}`) || 
-                    'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
+    // Get custom image and text from localStorage (no fallback image)
+    const customImage = localStorage.getItem(`focusModeCustomImage-${userId}`);
+    const customText = localStorage.getItem(`focusModeCustomText-${userId}`) || '';
     
     setCurrentAlertApp(appName);
     setShowingAlert(true);
@@ -346,18 +349,33 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     
     // Send to Electron for system-level popup
     if (window.electron) {
-      window.electron.send('show-focus-popup', {
+      const popupData: any = {
         title: "Focus Mode Alert", 
         body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
         notificationId: notificationId,
-        mediaType: 'image',
-        mediaContent: imageUrl
-      });
+        customText: customText
+      };
+      
+      // Only include image if one is set
+      if (customImage) {
+        popupData.mediaType = 'image';
+        popupData.mediaContent = customImage;
+      } else {
+        popupData.mediaType = 'text';
+        popupData.mediaContent = '';
+      }
+      
+      window.electron.send('show-focus-popup', popupData);
+    }
+    
+    let toastDescription = `You're outside your focus zone. ${appName} is not in your whitelist`;
+    if (customText) {
+      toastDescription += `\n\n${customText}`;
     }
     
     centerToast({
       title: "Focus Alert",
-      description: `You're outside your focus zone. ${appName} is not in your whitelist`,
+      description: toastDescription,
       duration: 5000,
     });
     
@@ -414,7 +432,8 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     isCurrentAppWhitelisted
   };
   
-  const alertImage = customImage || 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
+  // Get the custom image for the alert (no fallback)
+  const customImage = localStorage.getItem(`focusModeCustomImage-${userId}`);
   
   return (
     <FocusModeContext.Provider value={value}>
@@ -423,7 +442,7 @@ export const FocusModeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         <FocusModeAlert 
           appName={currentAlertApp} 
           onDismiss={handleAlertDismiss} 
-          imageUrl={alertImage}
+          imageUrl={customImage || undefined}
         />
       )}
     </FocusModeContext.Provider>

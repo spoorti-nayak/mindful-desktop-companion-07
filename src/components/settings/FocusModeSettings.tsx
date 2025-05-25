@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useFocusMode } from "@/contexts/FocusModeContext";
 import { X, Plus, Upload, Image, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -30,6 +31,9 @@ export function FocusModeSettings() {
   const [customImage, setCustomImage] = useState<string | null>(null);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Custom motivational text state
+  const [customText, setCustomText] = useState("");
   
   // User identifier for data separation
   const [userId, setUserId] = useState<string>(() => {
@@ -90,7 +94,7 @@ export function FocusModeSettings() {
     }
   };
   
-  // Load custom image from localStorage on component mount
+  // Load custom image and text from localStorage on component mount
   React.useEffect(() => {
     if (!userId) return;
     
@@ -98,7 +102,22 @@ export function FocusModeSettings() {
     if (savedImage) {
       setCustomImage(savedImage);
     }
+    
+    const savedText = localStorage.getItem(`focusModeCustomText-${userId}`);
+    if (savedText) {
+      setCustomText(savedText);
+    }
   }, [userId]);
+  
+  // Save custom text when it changes
+  const handleCustomTextChange = (text: string) => {
+    setCustomText(text);
+    try {
+      localStorage.setItem(`focusModeCustomText-${userId}`, text);
+    } catch (e) {
+      console.error("Failed to save custom text:", e);
+    }
+  };
   
   const triggerFileInput = () => {
     if (fileInputRef.current) {
@@ -116,7 +135,7 @@ export function FocusModeSettings() {
       <CardHeader>
         <CardTitle>Focus Mode</CardTitle>
         <CardDescription>
-          Control which applications and websites you can access during focus sessions
+          Control which applications you can access during focus sessions and customize your focus notifications
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -245,12 +264,27 @@ export function FocusModeSettings() {
           )}
         </div>
         
+        {/* Custom motivational text section */}
+        <div className="space-y-2">
+          <Label htmlFor="custom-text">Custom Motivational Message</Label>
+          <Textarea
+            id="custom-text"
+            placeholder="Add a custom message to show in focus notifications (e.g., 'Take a deep breath and refocus on your goals')"
+            value={customText}
+            onChange={(e) => handleCustomTextChange(e.target.value)}
+            rows={3}
+          />
+          <p className="text-xs text-muted-foreground">
+            This message will be displayed along with the system alert when you switch to a non-whitelisted app
+          </p>
+        </div>
+        
         <div className="space-y-4">
           <Label>Manage Whitelist</Label>
           
           <div className="flex space-x-2">
             <Input 
-              placeholder="Add application or website name" 
+              placeholder="Add application name (e.g., notepad, chrome, vscode)" 
               value={newApp}
               onChange={(e) => setNewApp(e.target.value)}
               className="flex-1"

@@ -11,7 +11,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { useState, useEffect } from "react";
 import { useTimer } from "@/contexts/TimerContext";
@@ -23,7 +22,6 @@ import * as z from "zod";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast as sonnerToast } from "sonner";
 import { FocusModeSettings } from "./FocusModeSettings";
-import { CustomRulesSettings } from "./CustomRulesSettings";
 
 const timerSettingsSchema = z.object({
   pomodoroDuration: z.number().min(1).max(120),
@@ -62,12 +60,6 @@ export function SettingsPanel() {
     },
   });
 
-  const handleSave = () => {
-    sonnerToast("Settings saved", {
-      description: "Your preferences have been updated.",
-    });
-  };
-
   const onTimerSettingsSave = (data: TimerSettingsValues) => {
     updateTimerSettings({
       pomodoroDuration: data.pomodoroDuration,
@@ -82,86 +74,11 @@ export function SettingsPanel() {
   };
 
   return (
-    <Tabs defaultValue="general" className="w-full">
-      <TabsList className="grid w-full grid-cols-5">
-        <TabsTrigger value="general">General</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
+    <Tabs defaultValue="timers" className="w-full">
+      <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="timers">Timer Settings</TabsTrigger>
         <TabsTrigger value="focus-mode">Focus Mode</TabsTrigger>
-        <TabsTrigger value="custom-rules">Custom Rules</TabsTrigger>
       </TabsList>
-      
-      <TabsContent value="general">
-        <Card>
-          <CardHeader>
-            <CardTitle>General Settings</CardTitle>
-            <CardDescription>
-              Configure your basic app preferences.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="autostart">Start app on system boot</Label>
-                <p className="text-sm text-muted-foreground">
-                  Launch automatically when you log in
-                </p>
-              </div>
-              <Switch id="autostart" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="minimizeToTray">Minimize to system tray</Label>
-                <p className="text-sm text-muted-foreground">
-                  Keep running in the background when closed
-                </p>
-              </div>
-              <Switch id="minimizeToTray" defaultChecked />
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Button onClick={handleSave}>Save Changes</Button>
-          </CardFooter>
-        </Card>
-      </TabsContent>
-      
-      <TabsContent value="notifications">
-        <Card>
-          <CardHeader>
-            <CardTitle>Notification Settings</CardTitle>
-            <CardDescription>
-              Control how and when you receive alerts.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="focusNotifications">Focus reminders</Label>
-                <p className="text-sm text-muted-foreground">
-                  Alerts when you seem distracted
-                </p>
-              </div>
-              <Switch id="focusNotifications" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="eyeCareNotifications">Eye care reminders</Label>
-                <p className="text-sm text-muted-foreground">
-                  20-20-20 rule notifications
-                </p>
-              </div>
-              <Switch id="eyeCareNotifications" defaultChecked />
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <Button onClick={handleSave}>Save Changes</Button>
-          </CardFooter>
-        </Card>
-      </TabsContent>
       
       <TabsContent value="timers">
         <Card>
@@ -320,10 +237,6 @@ export function SettingsPanel() {
       
       <TabsContent value="focus-mode">
         <FocusModeSettings />
-      </TabsContent>
-      
-      <TabsContent value="custom-rules">
-        <CustomRulesSettings />
       </TabsContent>
     </Tabs>
   );

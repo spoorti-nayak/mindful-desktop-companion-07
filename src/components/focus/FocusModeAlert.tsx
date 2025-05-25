@@ -13,13 +13,25 @@ interface FocusModeAlertProps {
 export function FocusModeAlert({ 
   appName, 
   onDismiss,
-  imageUrl = 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6'
+  imageUrl
 }: FocusModeAlertProps) {
   const [isVisible, setIsVisible] = useState(true);
   const { dimInsteadOfBlock } = useFocusMode();
   const [imageError, setImageError] = useState(false);
   const [popupShown, setPopupShown] = useState(false);
+  const [customText, setCustomText] = useState("");
   const notificationIdRef = useRef<string>(`focus-alert-${appName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+  
+  // Load custom text from localStorage
+  useEffect(() => {
+    const userId = localStorage.getItem('focusModeUserId');
+    if (userId) {
+      const savedText = localStorage.getItem(`focusModeCustomText-${userId}`);
+      if (savedText) {
+        setCustomText(savedText);
+      }
+    }
+  }, []);
   
   // Auto-dismiss after 8 seconds
   useEffect(() => {
@@ -39,37 +51,50 @@ export function FocusModeAlert({
       // Use the pre-generated notification ID
       const notificationId = notificationIdRef.current;
       
-      // Preload the image to ensure it loads before displaying
-      const img = new Image();
-      img.onload = () => {
-        // Once image is loaded, trigger the system-wide overlay popup
+      // Only load image if imageUrl is provided, otherwise skip image loading
+      if (imageUrl) {
+        const img = new Image();
+        img.onload = () => {
+          // Once image is loaded, trigger the system-wide overlay popup
+          window.electron.send('show-focus-popup', {
+            title: "Focus Mode Alert", 
+            body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
+            notificationId: notificationId,
+            mediaType: 'image',
+            mediaContent: imageUrl
+          });
+          
+          setPopupShown(true);
+        };
+        
+        img.onerror = () => {
+          // If image fails to load, show popup without image
+          setImageError(true);
+          window.electron.send('show-focus-popup', {
+            title: "Focus Mode Alert", 
+            body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
+            notificationId: notificationId,
+            mediaType: 'text',
+            mediaContent: ''
+          });
+          
+          setPopupShown(true);
+        };
+        
+        // Start loading the image
+        img.src = imageUrl;
+      } else {
+        // No image provided, show text-only popup
         window.electron.send('show-focus-popup', {
           title: "Focus Mode Alert", 
           body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
           notificationId: notificationId,
-          mediaType: 'image',
-          mediaContent: imageUrl
+          mediaType: 'text',
+          mediaContent: ''
         });
         
         setPopupShown(true);
-      };
-      
-      img.onerror = () => {
-        // If image fails to load, still show popup but with default image
-        setImageError(true);
-        window.electron.send('show-focus-popup', {
-          title: "Focus Mode Alert", 
-          body: `You're outside your focus zone. ${appName} is not in your whitelist.`,
-          notificationId: notificationId,
-          mediaType: 'image',
-          mediaContent: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6'
-        });
-        
-        setPopupShown(true);
-      };
-      
-      // Start loading the image
-      img.src = imageUrl;
+      }
       
       // Add listener for popup display confirmation
       const handlePopupDisplayed = (event: Event) => {
@@ -110,22 +135,35 @@ export function FocusModeAlert({
           className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50"
         >
           <div className="bg-black/85 text-white rounded-lg shadow-lg border border-white/10 overflow-hidden max-w-md">
-            {/* Display custom image with fallback */}
-            <div className="w-full h-40 bg-black/50 overflow-hidden">
-              <img 
-                src={!imageError ? imageUrl : 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6'} 
-                onError={handleImageError}
-                alt="Focus reminder" 
-                className="w-full h-full object-cover"
-              />
-            </div>
+            {/* Display custom image with proper styling if available */}
+            {imageUrl && !imageError && (
+              <div className="w-full h-40 bg-black/50 overflow-hidden">
+                <img 
+                  src={imageUrl} 
+                  onError={handleImageError}
+                  alt="Focus reminder" 
+                  style={{
+                    maxWidth: '100%',
+                    height: 'auto',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.2)'
+                  }}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
             <div className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className="text-amber-400 font-bold text-lg mb-1">Focus Mode Alert</h3>
-                  <p className="text-white/90">
+                  <p className="text-white/90 mb-2">
                     You're outside your focus zone. <span className="font-semibold">{appName}</span> is not in your whitelist.
                   </p>
+                  {customText && (
+                    <p className="text-blue-300 italic text-sm mb-2">
+                      {customText}
+                    </p>
+                  )}
                   {dimInsteadOfBlock ? (
                     <p className="text-xs mt-1 text-white/70">
                       Your screen will be dimmed until you return to an allowed application.
