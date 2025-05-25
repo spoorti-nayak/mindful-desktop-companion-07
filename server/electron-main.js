@@ -266,7 +266,7 @@ function startActiveWindowMonitoring() {
     }
     
     try {
-      const activeWindow = await activeWin(); // Using active-win for better app detection
+      const activeWindow = await activeWin();
       const now = Date.now();
       
       if (activeWindow) {
@@ -275,30 +275,43 @@ function startActiveWindowMonitoring() {
         if (lastActiveWindow && lastActiveWindow.owner?.path === activeWindow.owner?.path) {
           timeInWindow = now - lastActiveWindowTime;
         } else {
-          // Window changed, reset timer
           lastActiveWindowTime = now;
         }
         
-        // Store current window info
         lastActiveWindow = activeWindow;
         
-        // Send to renderer process with more detailed info
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('active-window-changed', {
-            title: activeWindow.title,
-            owner: activeWindow.owner?.name || 'Unknown',
-            path: activeWindow.owner?.path || 'Unknown',
-            appName: activeWindow.owner?.name || 'Unknown',
+        // Enhanced window info with better app detection
+        const windowInfo = {
+          title: activeWindow.title,
+          owner: {
+            name: activeWindow.owner?.name || 'Unknown',
+            path: activeWindow.owner?.path || '',
             bundleId: activeWindow.owner?.bundleId || '',
-            processId: activeWindow.owner?.processId || '',
-            timeActive: timeInWindow
-          });
+            processId: activeWindow.owner?.processId || 0
+          },
+          appName: activeWindow.owner?.name || extractAppFromTitle(activeWindow.title),
+          timeActive: timeInWindow,
+          timestamp: now
+        };
+        
+        // Send to renderer process with enhanced info
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('active-window-changed', windowInfo);
         }
       }
     } catch (error) {
       console.error('Error getting active window:', error);
     }
-  }, 1000);
+  }, 500); // Reduced interval for better responsiveness
+}
+
+// Helper function to extract app name from window title
+function extractAppFromTitle(title) {
+  if (!title) return 'Unknown';
+  
+  // Common patterns in window titles
+  const appNameMatches = title.match(/^(.*?)(?:\s[-–—]\s|\s\|\s|\s:|\s\d|$)/);
+  return appNameMatches?.[1]?.trim() || title.trim();
 }
 
 function initializeBlinkDetection() {
@@ -375,44 +388,32 @@ function toggleFocusMode() {
 function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaContent = '') {
   try {
     console.log(`Showing focus popup: ${title} - ${body}`);
-    console.log(`Media type: ${mediaType}, Media content: ${mediaContent}`);
     
-    // Check if we've already processed this notification ID to prevent duplicates
     if (notificationId && notificationId === lastProcessedNotificationId) {
       console.log(`Skipping duplicate notification with ID: ${notificationId}`);
       return;
     }
     
-    // Create a unique notification ID with timestamp if not provided
     const effectiveNotificationId = notificationId || `focus-popup-${Date.now()}`;
-    
-    // Update the last processed notification ID
     lastProcessedNotificationId = effectiveNotificationId;
     
-    // Ensure the focus popup window exists
     if (!focusPopupWindow || focusPopupWindow.isDestroyed()) {
       createFocusPopupWindow();
     }
     
-    // Get the primary display dimensions for exact center positioning
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
     
-    // Center the popup window and make it visible on top of all windows
     if (focusPopupWindow) {
-      // Position popup at the center of the screen
       focusPopupWindow.setPosition(
         Math.floor((width - 500) / 2),
         Math.floor((height - 400) / 2)
       );
       
-      // Safe check for mediaContent
-      const safeMediaContent = mediaContent || '';
+      const safeMediaContent = mediaContent || 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
       
-      // Determine media HTML content - handle both file:// paths and URLs safely
       let mediaHtml = '';
       if (mediaType === 'image' && safeMediaContent) {
-        // Ensure the image source is properly formatted and escaped
         const imgSrc = safeMediaContent.replace(/"/g, '\\"');
         mediaHtml = `
           <div class="media-container">
@@ -420,16 +421,8 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
                  onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1461749280684-dccba630e2f6'"/>
           </div>
         `;
-      } else if (mediaType === 'video' && safeMediaContent) {
-        const videoSrc = safeMediaContent.replace(/"/g, '\\"');
-        mediaHtml = `
-          <div class="media-container">
-            <video src="${videoSrc}" autoplay loop muted class="media-content" onerror="this.style.display='none'"></video>
-          </div>
-        `;
       }
       
-      // Create HTML content for the rich media popup with animation - system level design
       const popupContent = `
         <html>
         <head>
@@ -438,80 +431,79 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
               margin: 0;
               padding: 0;
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-              background-color: rgba(0, 0, 0, 0.85);
+              background-color: rgba(0, 0, 0, 0.9);
               border-radius: 12px;
               overflow: hidden;
               color: white;
               display: flex;
               flex-direction: column;
               height: 100vh;
-              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-              animation: fadeIn 0.5s ease-in;
-              border: 1px solid rgba(255, 255, 255, 0.15);
+              box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+              animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+              border: 2px solid rgba(255, 149, 0, 0.3);
             }
             .media-container {
               width: 100%;
               height: 220px;
               overflow: hidden;
               position: relative;
-              background-color: rgba(0, 0, 0, 0.3);
+              background: linear-gradient(135deg, rgba(255, 149, 0, 0.1), rgba(0, 0, 0, 0.3));
             }
             .media-content {
               width: 100%;
               height: 100%;
               object-fit: cover;
-              animation: zoomIn 8s ease-in-out infinite alternate;
+              filter: brightness(0.8) contrast(1.1);
             }
             .content {
               padding: 24px;
               flex: 1;
+              background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.95));
             }
             .title {
               font-size: 24px;
-              font-weight: bold;
+              font-weight: 700;
               margin-bottom: 12px;
               color: #FF9500;
-              animation: slideDown 0.5s ease-out;
+              text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
             }
             .body {
               font-size: 16px;
-              opacity: 0.9;
-              line-height: 1.5;
-              animation: fadeIn 0.8s ease-out;
+              opacity: 0.95;
+              line-height: 1.6;
+              color: #f0f0f0;
             }
             .button-container {
               display: flex;
               justify-content: flex-end;
               padding: 16px 24px 24px;
+              background: rgba(0, 0, 0, 0.95);
             }
             .close-button {
-              background: rgba(255, 255, 255, 0.2);
+              background: linear-gradient(135deg, #FF9500, #FF7A00);
               border: none;
               color: white;
-              padding: 10px 16px;
-              border-radius: 6px;
+              padding: 12px 20px;
+              border-radius: 8px;
               cursor: pointer;
               font-size: 14px;
-              font-weight: 500;
-              transition: background 0.2s;
+              font-weight: 600;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3);
             }
             .close-button:hover {
-              background: rgba(255, 255, 255, 0.3);
+              transform: translateY(-2px);
+              box-shadow: 0 6px 20px rgba(255, 149, 0, 0.4);
             }
-            .notification-id {
-              display: none;
-            }
-            @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-            }
-            @keyframes slideDown {
-              from { transform: translateY(-10px); opacity: 0; }
-              to { transform: translateY(0); opacity: 1; }
-            }
-            @keyframes zoomIn {
-              from { transform: scale(1); }
-              to { transform: scale(1.1); }
+            @keyframes slideIn {
+              from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+              }
+              to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+              }
             }
           </style>
         </head>
@@ -520,93 +512,36 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
           <div class="content">
             <div class="title">${title}</div>
             <div class="body">${body}</div>
-            <div class="notification-id">${effectiveNotificationId}</div>
           </div>
           <div class="button-container">
             <button class="close-button" onclick="closeNotification()">Dismiss</button>
           </div>
           <script>
-            // Notify renderer that popup is displayed
-            if (window.opener) {
-              try {
-                window.opener.postMessage({
-                  action: 'focus-popup-displayed',
-                  notificationId: '${effectiveNotificationId}'
-                }, '*');
-              } catch (e) {
-                console.error('Failed to notify opener:', e);
-              }
-            }
-            
-            // Auto-close after 8 seconds
-            const autoCloseTimeout = setTimeout(() => {
+            setTimeout(() => {
               closeNotification();
             }, 8000);
             
             function closeNotification() {
-              clearTimeout(autoCloseTimeout);
               window.close();
             }
             
-            // Preload image to ensure it's cached
-            if ('${mediaType}' === 'image') {
-              const img = new Image();
-              img.onload = function() {
-                document.querySelector('.media-content').style.opacity = 1;
-                
-                // Notify renderer the image has loaded successfully
-                if (window.opener) {
-                  try {
-                    window.opener.postMessage({
-                      action: 'focus-popup-media-loaded',
-                      notificationId: '${effectiveNotificationId}'
-                    }, '*');
-                  } catch (e) {
-                    console.error('Failed to notify opener about media load:', e);
-                  }
-                }
-              };
-              img.onerror = function() {
-                // Fall back to default image
-                document.querySelector('.media-content').src = 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6';
-              };
-              
-              // Start loading if not already loaded
-              if (!document.querySelector('.media-content').complete) {
-                img.src = '${safeMediaContent}';
-              }
-            }
-            
-            // Allow clicking anywhere to close
             document.body.addEventListener('click', (e) => {
               if (!e.target.classList.contains('close-button')) {
                 closeNotification();
               }
-            });
-            
-            // Confirm popup is displayed
-            document.addEventListener('DOMContentLoaded', () => {
-              console.log('Focus popup loaded and displayed');
             });
           </script>
         </body>
         </html>
       `;
       
-      // Load the popup content and ensure it's shown on top
       focusPopupWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(popupContent)}`);
-      
-      // Set crucial window properties to ensure it appears as an overlay
-      focusPopupWindow.setAlwaysOnTop(true, 'screen-saver', 1); // Enforce maximum level of always on top
+      focusPopupWindow.setAlwaysOnTop(true, 'screen-saver', 1);
       focusPopupWindow.setSkipTaskbar(true);
       focusPopupWindow.setVisibleOnAllWorkspaces(true);
-      focusPopupWindow.setFullScreenable(false);
-      
-      // Show the popup window and force it to top
       focusPopupWindow.show();
       focusPopupWindow.moveTop();
       
-      // Notify the renderer that the popup has been displayed
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('focus-popup-displayed', {
           notificationId: effectiveNotificationId,
@@ -614,42 +549,10 @@ function showFocusPopup(title, body, notificationId, mediaType = 'image', mediaC
         });
       }
       
-      console.log("Focus popup shown as system-level overlay on top of all windows");
-      
-      // Also send as a native notification (as fallback)
-      if (Notification.isSupported()) {
-        const notification = new Notification({
-          title: title,
-          body: body,
-          icon: path.join(__dirname, 'assets', 'icon.png'),
-          silent: false,
-        });
-        
-        notification.show();
-        
-        // Handle notification click - show main app window
-        notification.on('click', () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.show();
-            mainWindow.focus();
-          }
-        });
-        
-        // Handle notification close
-        notification.on('close', () => {
-          if (effectiveNotificationId) {
-            // Notify renderer process that notification was dismissed
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('notification-dismissed', effectiveNotificationId);
-            }
-          }
-        });
-      }
+      console.log("Focus popup shown successfully");
     }
   } catch (error) {
     console.error("Error showing focus popup:", error);
-    
-    // Fallback to basic notification if error occurs
     showNotification(title, body, notificationId);
   }
 }
@@ -960,5 +863,36 @@ app.on('window-all-closed', (event) => {
   if (process.platform !== 'darwin') {
     // Don't quit the app
     event.preventDefault();
+  }
+});
+
+// Add IPC handlers
+ipcMain.on('stabilize-window', () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // Prevent window glitching by ensuring stable state
+      const bounds = mainWindow.getBounds();
+      mainWindow.setBounds(bounds);
+      mainWindow.setResizable(true);
+      
+      // Brief delay to ensure stability
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.focus();
+        }
+      }, 50);
+    }
+  } catch (error) {
+    console.error('Error stabilizing window:', error);
+  }
+});
+
+// Enhanced focus popup with better error handling
+ipcMain.on('show-focus-popup', (event, data) => {
+  try {
+    const { title, body, notificationId, mediaType = 'image', mediaContent = '' } = data;
+    showFocusPopup(title, body, notificationId, mediaType, mediaContent);
+  } catch (error) {
+    console.error('Error handling show-focus-popup:', error);
   }
 });

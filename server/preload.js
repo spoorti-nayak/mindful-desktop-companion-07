@@ -1,4 +1,3 @@
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods that allow the renderer process to use
@@ -15,8 +14,9 @@ contextBridge.exposeInMainWorld('electron', {
       'toggle-focus-mode',
       'save-timer-settings',
       'get-active-window',
-      'notification-dismissed', // Added channel to track dismissed notifications
-      'show-focus-popup' // Added for rich media focus popups
+      'notification-dismissed',
+      'show-focus-popup',
+      'stabilize-window' // Added for preventing glitches
     ];
     
     if (validSendChannels.includes(channel)) {
@@ -35,16 +35,14 @@ contextBridge.exposeInMainWorld('electron', {
       'focus-mode-changed',
       'timer-settings-saved',
       'notification-dismissed',
-      'show-focus-popup', // Add this to allowed channels
-      'focus-popup-displayed' // New event to confirm popup was displayed
+      'show-focus-popup',
+      'focus-popup-displayed'
     ];
     
     if (validReceiveChannels.includes(channel)) {
-      // Deliberately strip event as it includes `sender` 
       const subscription = (event, ...args) => func(...args);
       ipcRenderer.on(channel, subscription);
       
-      // Return a function to remove the listener to avoid memory leaks
       return () => {
         ipcRenderer.removeListener(channel, subscription);
       };
